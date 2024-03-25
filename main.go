@@ -17,6 +17,8 @@ type Message struct {
 	Filter  string `json:"filter"`
 }
 
+var AIBoothConn net.Conn
+
 func main() {
 	//PhotoBoothAppStart()
 	fmt.Println("SERVER START")
@@ -50,11 +52,12 @@ func handleClient(conn net.Conn) {
 		// 소켓으로부터 데이터를 읽어옵니다.
 		n, err := conn.Read(buf)
 		if err != nil {
-			fmt.Println("Error reading:", err.Error())
 			if err == io.EOF {
 				fmt.Println("Connection closed by client:", conn.RemoteAddr())
-				return // 연결이 끊겼을 때 함수를 종료합니다.
+			} else {
+				fmt.Println("Error:", err)
 			}
+			return
 		}
 
 		PacketHandler(buf, n, conn)
@@ -62,19 +65,33 @@ func handleClient(conn net.Conn) {
 }
 
 func PacketHandler(buf []byte, n int, conn net.Conn) {
+	log.Println("Packet Receved:", string(buf))
+
+	if string(buf)[:9] == "python_o_" { //python_메시지 패킷이라면
+		log.Println("Python success : ", string(buf)[9:])
+		AIBoothConn.Write([]byte("ai_converting_finished"))
+		return
+	} else if string(buf)[:9] == "python_x_" {
+		log.Println("Python fail error message : ", string(buf)[9:])
+		AIBoothConn.Write([]byte("ai_converting_Fail_" + string(buf)[9:]))
+		return
+	}
+
 	// PhotoPacket 형식 json Unmarshal 시도
 	var message Message
 	err := json.Unmarshal(buf[:n], &message)
 	if err != nil {
 		fmt.Println("Error decoding JSON:", err.Error())
+		return
 	} else {
+		AIBoothConn = conn
 		if PhotoPacket(message) {
-			// Success
-			fmt.Println("AI Convert Finished")
+			fmt.Println("AI Convert Python Finished")
 			conn.Write([]byte("ai_converting_finished"))
+			AIPythonSuccesss()
 		} else {
-			fmt.Println("AI Convert Fail")
-			conn.Write([]byte("ai_converting_Fail"))
+			fmt.Println("AI Convert Python fail")
+			conn.Write([]byte("ai_converting_Fail_AI Convert Python fail"))
 		}
 	}
 }
@@ -156,4 +173,16 @@ func PhotoBoothAppStart() {
 			fmt.Println("PhotoBooth App Start")
 		}
 	}()
+}
+
+func SendPacketToBooth(pkt string) {
+	if AIBoothConn != nil {
+		AIBoothConn.Write([]byte(pkt))
+	} else {
+		log.Println("No Booth Conn")
+	}
+}
+
+func AIPythonSuccesss() {
+
 }
